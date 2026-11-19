@@ -56,6 +56,16 @@ for taken_guid in "${known_taken_guids[@]}"; do
 done
 
 if [ "${CHECK_REMOTE_GUIDS:-0}" = "1" ]; then
+  # The catalogue publishes this plugin too, so an entry there that points back at this
+  # repository is this plugin, not a collision. Matched by the repository named in the
+  # manifest, the same way the catalogue matches its sources.
+  self_slug="$(jq -r '.[0].imageUrl // empty' manifest.json \
+    | sed -nE 's#^https://raw\.githubusercontent\.com/([^/]+/[^/]+)/.*#\1#p')"
+  if [ -z "${self_slug}" ]; then
+    echo "manifest.json imageUrl does not name this plugin's repository." >&2
+    exit 1
+  fi
+
   remote_manifests=(
     "https://repo.jellyfin.org/files/plugin/manifest.json"
     "https://raw.githubusercontent.com/voc0der/jellyfin-plugins/main/manifest.json"
@@ -65,7 +75,9 @@ if [ "${CHECK_REMOTE_GUIDS:-0}" = "1" ]; then
 
   for manifest_url in "${remote_manifests[@]}"; do
     if curl -fsSL "${manifest_url}" \
-      | jq -e --arg guid "${manifest_guid}" 'any(.[]; (.guid | ascii_downcase) == $guid)' >/dev/null; then
+      | jq -e --arg guid "${manifest_guid}" --arg self "${self_slug}" '
+          any(.[]; (.guid | ascii_downcase) == $guid
+            and ([.imageUrl // "", (.versions // [])[].sourceUrl // ""] | join(" ") | contains($self) | not))' >/dev/null; then
       echo "Plugin GUID ${manifest_guid} already appears in ${manifest_url}." >&2
       exit 1
     fi
