@@ -29,6 +29,10 @@ cached.
 | `SEERR_IMAGE` | another Seerr image (default `ghcr.io/seerr-team/seerr:develop`) |
 | `PROXY_DIR` | build Seerr Proxy from a checkout instead of using its release |
 | `PROXY_ZIP_URL`, `INJECTOR_ZIP_URL` | other release archives |
+| `PROXY_ZIP_SHA256`, `INJECTOR_ZIP_SHA256` | their SHA-256, required with another archive |
+
+The default archives are pinned by SHA-256. Their DLLs are loaded into Jellyfin, so a release
+asset that changes fails the run instead of being installed.
 
 The users are `alice` and `bob`, both linked in Seerr, and `carol`, who is not. Passwords are
 `<name>-harness-pw`; the admin is `admin` / `harness-admin-pw`.

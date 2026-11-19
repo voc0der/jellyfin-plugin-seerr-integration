@@ -6,9 +6,9 @@
 // the proxy decides which Seerr account acts, and only Seerr can say who a request belongs to.
 
 import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
@@ -23,11 +23,19 @@ export const REPO_ROOT = resolve(HARNESS_ROOT, '../..');
 export const JELLYFIN_IMAGE = process.env.JELLYFIN_IMAGE ?? 'jellyfin/jellyfin:12.4';
 export const SEERR_IMAGE = process.env.SEERR_IMAGE ?? 'ghcr.io/seerr-team/seerr:develop';
 
-// The releases people install. PROXY_DIR builds Seerr Proxy from a checkout instead.
-const INJECTOR_ZIP = process.env.INJECTOR_ZIP_URL
-    ?? 'https://github.com/n00bcodr/Jellyfin-JavaScript-Injector/releases/download/4.1.0.0/Jellyfin.Plugin.JavaScriptInjector_12.0.0.zip';
-const PROXY_ZIP = process.env.PROXY_ZIP_URL
-    ?? 'https://github.com/voc0der/jellyfin-plugin-seerr-proxy/releases/download/1.0.0.15/Seerr_Proxy_1.0.0.15.zip';
+// The releases people install, pinned by checksum: their DLLs are loaded into Jellyfin, so a
+// replaced release asset must fail the run rather than be installed. PROXY_DIR builds Seerr
+// Proxy from a checkout instead.
+const INJECTOR_ZIP = {
+    url: process.env.INJECTOR_ZIP_URL
+        ?? 'https://github.com/n00bcodr/Jellyfin-JavaScript-Injector/releases/download/4.1.0.0/Jellyfin.Plugin.JavaScriptInjector_12.0.0.zip',
+    sha256: process.env.INJECTOR_ZIP_SHA256 ?? '099aa99dd9aa7df330ea6aeb9e9e74adb5373f01927bc9f0988493b3cefd18d6'
+};
+const PROXY_ZIP = {
+    url: process.env.PROXY_ZIP_URL
+        ?? 'https://github.com/voc0der/jellyfin-plugin-seerr-proxy/releases/download/1.0.0.15/Seerr_Proxy_1.0.0.15.zip',
+    sha256: process.env.PROXY_ZIP_SHA256 ?? '9fadef5c0d5c21ecfaa2b4979e49df9d552edb0ba496e4048521aa8bdfdb1ca6'
+};
 
 export const PLUGIN_ID = 'c937e280-0ac7-4250-a620-8c5892e628fe';
 export const PROXY_ID = '1ac3cf0f-f0f9-443a-be08-be38e48ff683';
@@ -48,18 +56,28 @@ async function docker(...args) {
     return stdout.trim();
 }
 
-async function download(url, target) {
-    if (existsSync(target)) {
+const sha256Of = bytes => createHash('sha256').update(bytes).digest('hex');
+
+// A cached copy is used only if it still matches the checksum. A download lands beside the
+// cache and replaces it only once its checksum has been checked.
+async function download({ url, sha256 }) {
+    const target = join(HARNESS_ROOT, '.cache', basename(new URL(url).pathname));
+    const cached = await readFile(target).catch(() => null);
+    if (cached && sha256Of(cached) === sha256) {
         return target;
     }
 
-    const response = await fetch(url);
-    if (!response.ok) {
-        throw new Error(`download ${url} -> ${response.status}`);
+    await mkdir(dirname(target), { recursive: true });
+    const partial = `${target}.partial`;
+    await exec('curl', ['--fail', '--silent', '--show-error', '--location', '--output', partial, url]);
+    const actual = sha256Of(await readFile(partial));
+    if (actual !== sha256) {
+        await rm(partial, { force: true });
+        throw new Error(`${url} has SHA-256 ${actual}, not the pinned ${sha256}. `
+            + 'For another release, set the matching *_ZIP_SHA256 variable.');
     }
 
-    await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, Buffer.from(await response.arrayBuffer()));
+    await rename(partial, target);
     return target;
 }
 
@@ -87,13 +105,13 @@ export async function stagePlugins() {
         ], { maxBuffer: 64 * 1024 * 1024 });
         await exec('cp', [join(build, 'proxy', 'Jellyfin.Plugin.SeerrProxy.dll'), proxy]);
     } else {
-        const zip = await download(PROXY_ZIP, join(HARNESS_ROOT, '.cache', PROXY_ZIP.split('/').pop()));
+        const zip = await download(PROXY_ZIP);
         await exec('unzip', ['-q', '-o', '-j', zip, '*.dll', '-d', proxy]);
     }
 
     const injector = join(plugins, 'JavaScript Injector_4.1.0.0');
     await mkdir(injector, { recursive: true });
-    const injectorZip = await download(INJECTOR_ZIP, join(HARNESS_ROOT, '.cache', INJECTOR_ZIP.split('/').pop()));
+    const injectorZip = await download(INJECTOR_ZIP);
     await exec('unzip', ['-q', '-o', '-j', injectorZip, '*.dll', '-d', injector]);
 
     return plugins;
