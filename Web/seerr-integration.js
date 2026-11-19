@@ -737,17 +737,18 @@
         return key;
     }
 
-    function loadSession(force) {
+    // The Try again button clears `session`, which makes the next call ask Seerr again.
+    function loadSession() {
         const key = resetIfUserChanged();
         if (!key) {
             return Promise.reject(new ApiError(401, 'MissingJellyfinUser', ''));
         }
 
-        if (!force && session && Date.now() - session.loadedAt < SESSION_TTL_MS) {
+        if (session && Date.now() - session.loadedAt < SESSION_TTL_MS) {
             return Promise.resolve(session);
         }
 
-        if (!force && sessionPromise) {
+        if (sessionPromise) {
             return sessionPromise;
         }
 
@@ -1362,7 +1363,7 @@ html.${ACTIVE_CLASS} .mainAnimatedPage:not(#${PAGE_ID}) { display: none !importa
             setBackdrop(page, '');
         }
 
-        loadSession(false).then(function (current) {
+        loadSession().then(function (current) {
             if (token !== renderToken) {
                 return null;
             }
