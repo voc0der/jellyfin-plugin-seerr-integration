@@ -1,0 +1,91 @@
+name: Requests page
+
+# Drives the Requests page in a real Jellyfin, with this commit's build of the plugin, the
+# released Seerr Proxy and JavaScript Injector installed, next to a real Seerr. It checks the
+# navigation entry in each display mode, discovery, search, requests, edits and cancels, and
+# above all that every request lands in Seerr as the user who made it. A page that requests
+# as the wrong user builds, loads and passes every unit test, so nothing else here would notice.
+#
+# Only for changes that can affect the page: its script and loader, the endpoint serving them,
+# and the harness itself.
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'Web/**'
+      - 'Browser/**'
+      - 'Api/**'
+      - 'tests/e2e/**'
+      - '.github/workflows/e2e.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'Web/**'
+      - 'Browser/**'
+      - 'Api/**'
+      - 'tests/e2e/**'
+      - '.github/workflows/e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  harness:
+    runs-on: ubuntu-latest
+
+    # Locally the suite takes under a minute once the images are cached; CI adds installing the
+    # browser and pulling both images. The bound is for a server that never comes up.
+    timeout-minutes: 25
+
+    defaults:
+      run:
+        working-directory: tests/e2e
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v6
+      with:
+        dotnet-version: 10.0.x
+
+    - name: Setup Node
+      uses: actions/setup-node@v7
+      with:
+        node-version: 26
+        cache: npm
+        cache-dependency-path: tests/e2e/package-lock.json
+
+    - name: Install the harness
+      run: |
+        npm ci
+        npx playwright install --with-deps chromium
+
+    # The images are read out of the harness rather than written here, so the two cannot
+    # disagree. Pulled up front so a slow registry shows up as this step's time, not as a test
+    # that looks hung.
+    - name: Pull the Jellyfin and Seerr images
+      run: |
+        for name in JELLYFIN_IMAGE SEERR_IMAGE; do
+          image=$(grep -oP "export const ${name} = process.env.${name} \?\? '\K[^']+" harness/stack.mjs)
+          if [ -z "$image" ]; then
+            echo "harness/stack.mjs names no ${name}." >&2
+            exit 1
+          fi
+          docker pull --quiet "$image"
+        done
+
+    - name: Run the harness
+      run: npx playwright test
+
+    - name: Keep the evidence
+      if: failure()
+      uses: actions/upload-artifact@v7
+      with:
+        name: requests-page-harness
+        path: |
+          tests/e2e/playwright-report/
+          tests/e2e/test-results/
+        if-no-files-found: ignore

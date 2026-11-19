@@ -1,0 +1,13 @@
+{
+  "name": "seerr-integration-e2e",
+  "version": "1.0.0",
+  "description": "Drives the Requests page in a real Jellyfin with Seerr Proxy, JavaScript Injector and a real Seerr, and checks that every request is made as the signed-in user.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

@@ -1,0 +1,12 @@
+[
+  {
+    "category": "General",
+    "guid": "c937e280-0ac7-4250-a620-8c5892e628fe",
+    "name": "Seerr Integration",
+    "description": "Adds a Requests page to Jellyfin Web for discovering and requesting movies and series in Seerr. Every request is made as the signed-in Jellyfin user through Seerr Proxy. Requires the Seerr Proxy and JavaScript Injector plugins.",
+    "owner": "voc0der",
+    "overview": "Discover and request movies and series from Seerr inside Jellyfin",
+    "imageUrl": "https://raw.githubusercontent.com/voc0der/jellyfin-plugin-seerr-integration/main/icon.png",
+    "versions": []
+  }
+]
