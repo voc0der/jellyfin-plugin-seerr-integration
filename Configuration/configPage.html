@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Seerr Integration</title>
+</head>
+<body>
+    <div id="SeerrIntegrationConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
+         data-require="emby-input,emby-button,emby-checkbox">
+        <div data-role="content">
+            <div class="content-primary">
+                <form id="SeerrIntegrationConfigForm" onsubmit="return window.SeerrIntegrationConfigSubmit(event, this);">
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">Seerr Integration Settings</h2>
+
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input id="chkEnabled" type="checkbox" is="emby-checkbox" />
+                                <span>Show the Requests page in Jellyfin Web</span>
+                            </label>
+                            <div class="fieldDescription checkboxFieldDescription">
+                                Adds Requests to the navigation for every signed-in user. Browsers pick a change up
+                                when they next reload Jellyfin.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="verticalSection" style="margin-top: 2em;">
+                        <h2 class="sectionTitle">Status</h2>
+                        <div id="statusList" class="fieldDescription" style="line-height: 1.8;"></div>
+                        <div class="fieldDescription" style="margin-top: 1em;">
+                            Requests are always made as the signed-in Jellyfin user through Seerr Proxy, using
+                            the Seerr account linked to that user. Seerr Proxy holds the Seerr connection
+                            settings; this plugin stores none.
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 2em;">
+                        <button id="btnSave" is="emby-button" type="submit" class="raised button-submit block">
+                            <span>Save</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script type="text/javascript">
+        var SeerrIntegrationConfig = {
+            pluginId: 'c937e280-0ac7-4250-a620-8c5892e628fe'
+        };
+
+        function seerrIntegrationValue(source, pascalKey, camelKey, fallbackValue) {
+            if (source && source[pascalKey] !== undefined && source[pascalKey] !== null) {
+                return source[pascalKey];
+            }
+
+            if (source && source[camelKey] !== undefined && source[camelKey] !== null) {
+                return source[camelKey];
+            }
+
+            return fallbackValue;
+        }
+
+        function seerrIntegrationSetValue(config, pascalKey, camelKey, value) {
+            if (config && Object.prototype.hasOwnProperty.call(config, camelKey)
+                && !Object.prototype.hasOwnProperty.call(config, pascalKey)) {
+                config[camelKey] = value;
+                return;
+            }
+
+            config[pascalKey] = value;
+        }
+
+        function seerrIntegrationStatusLine(ok, text) {
+            var line = document.createElement('div');
+            var mark = document.createElement('span');
+            mark.className = 'material-icons';
+            mark.setAttribute('aria-hidden', 'true');
+            mark.style.verticalAlign = 'middle';
+            mark.style.marginRight = '0.4em';
+            mark.style.fontSize = '1.2em';
+            mark.textContent = ok ? 'check_circle' : 'error_outline';
+            var label = document.createElement('span');
+            label.textContent = text;
+            line.appendChild(mark);
+            line.appendChild(label);
+            return line;
+        }
+
+        function seerrIntegrationLoaderText(state, detail) {
+            switch (state) {
+                case 'Registered':
+                    return [true, 'JavaScript Injector: the Requests page is registered.'];
+                case 'Disabled':
+                    return [true, 'JavaScript Injector: not used while the Requests page is switched off.'];
+                case 'InjectorMissing':
+                    return [false, 'JavaScript Injector is not installed. Install it from its plugin repository and restart Jellyfin.'];
+                case 'Failed':
+                    return [false, 'JavaScript Injector refused the Requests page: ' + (detail || 'see the Jellyfin log') + '.'];
+                default:
+                    return [false, 'JavaScript Injector: not checked yet. Restart Jellyfin if this does not change.'];
+            }
+        }
+
+        function seerrIntegrationRenderStatus(registration, proxyStatus, proxyError) {
+            var list = document.getElementById('statusList');
+            list.innerHTML = '';
+
+            if (registration) {
+                var loader = seerrIntegrationLoaderText(
+                    seerrIntegrationValue(registration, 'LoaderState', 'loaderState', ''),
+                    seerrIntegrationValue(registration, 'LoaderDetail', 'loaderDetail', ''));
+                list.appendChild(seerrIntegrationStatusLine(loader[0], loader[1]));
+
+                if (!seerrIntegrationValue(registration, 'SeerrProxyInstalled', 'seerrProxyInstalled', false)) {
+                    list.appendChild(seerrIntegrationStatusLine(false, 'Seerr Proxy is not installed. The Requests page needs it for every Seerr call.'));
+                    return;
+                }
+
+                if (!seerrIntegrationValue(registration, 'SeerrProxyActive', 'seerrProxyActive', false)) {
+                    list.appendChild(seerrIntegrationStatusLine(false, 'Seerr Proxy is installed but not active. Enable it and restart Jellyfin.'));
+                    return;
+                }
+            } else {
+                list.appendChild(seerrIntegrationStatusLine(false, 'Could not read this plugin\'s status.'));
+            }
+
+            if (proxyError) {
+                list.appendChild(seerrIntegrationStatusLine(false, proxyError));
+                return;
+            }
+
+            if (!proxyStatus) {
+                return;
+            }
+
+            if (!seerrIntegrationValue(proxyStatus, 'Enabled', 'enabled', false)) {
+                list.appendChild(seerrIntegrationStatusLine(false, 'Seerr Proxy is switched off in its own settings.'));
+                return;
+            }
+
+            if (!seerrIntegrationValue(proxyStatus, 'Configured', 'configured', false)) {
+                list.appendChild(seerrIntegrationStatusLine(false, 'Seerr Proxy has no Seerr URL or API key yet.'));
+                return;
+            }
+
+            if (seerrIntegrationValue(proxyStatus, 'SeerrReachable', 'seerrReachable', true) === false) {
+                list.appendChild(seerrIntegrationStatusLine(false, 'Seerr Proxy cannot reach Seerr right now.'));
+                return;
+            }
+
+            list.appendChild(seerrIntegrationStatusLine(true, 'Seerr Proxy is enabled and reaches Seerr.'));
+            var linked = seerrIntegrationValue(proxyStatus, 'Linked', 'linked', null);
+            if (linked === true) {
+                var name = seerrIntegrationValue(proxyStatus, 'DisplayName', 'displayName', '');
+                list.appendChild(seerrIntegrationStatusLine(true, 'Your Jellyfin account is linked in Seerr' + (name ? ' as ' + name : '') + '.'));
+            } else if (linked === false) {
+                list.appendChild(seerrIntegrationStatusLine(false, 'Your Jellyfin account is not linked in Seerr. Users must be imported in Seerr before they can request.'));
+            }
+        }
+
+        function seerrIntegrationLoadStatus() {
+            var registrationPromise = ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl('Plugins/SeerrIntegration/Registration'),
+                dataType: 'json'
+            }).catch(function () {
+                return null;
+            });
+
+            return registrationPromise.then(function (registration) {
+                var proxyReady = registration
+                    && seerrIntegrationValue(registration, 'SeerrProxyInstalled', 'seerrProxyInstalled', false)
+                    && seerrIntegrationValue(registration, 'SeerrProxyActive', 'seerrProxyActive', false);
+                if (!proxyReady) {
+                    seerrIntegrationRenderStatus(registration, null, null);
+                    return;
+                }
+
+                return ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl('Plugins/SeerrProxy/Status'),
+                    dataType: 'json'
+                }).then(function (proxyStatus) {
+                    seerrIntegrationRenderStatus(registration, proxyStatus, null);
+                }).catch(function (error) {
+                    var status = error && error.status;
+                    seerrIntegrationRenderStatus(registration, null, status === 429
+                        ? 'Seerr Proxy is rate limiting this account. Reload this page in a minute.'
+                        : 'Seerr Proxy did not answer its status check.');
+                });
+            });
+        }
+
+        document.getElementById('SeerrIntegrationConfigPage').addEventListener('pageshow', function () {
+            Dashboard.showLoadingMsg();
+            ApiClient.getPluginConfiguration(SeerrIntegrationConfig.pluginId).then(function (config) {
+                document.getElementById('chkEnabled').checked = !!seerrIntegrationValue(config, 'Enabled', 'enabled', true);
+                return seerrIntegrationLoadStatus();
+            }).then(function () {
+                Dashboard.hideLoadingMsg();
+            }).catch(function () {
+                Dashboard.hideLoadingMsg();
+                Dashboard.alert('Failed to load Seerr Integration configuration.');
+            });
+        });
+
+        window.SeerrIntegrationConfigSubmit = function (e) {
+            if (e && typeof e.preventDefault === 'function') {
+                e.preventDefault();
+            }
+
+            Dashboard.showLoadingMsg();
+
+            ApiClient.getPluginConfiguration(SeerrIntegrationConfig.pluginId).then(function (config) {
+                seerrIntegrationSetValue(config, 'Enabled', 'enabled', document.getElementById('chkEnabled').checked);
+                return ApiClient.updatePluginConfiguration(SeerrIntegrationConfig.pluginId, config).then(function (result) {
+                    Dashboard.processPluginConfigurationUpdateResult(result);
+                    return seerrIntegrationLoadStatus();
+                });
+            }).catch(function () {
+                Dashboard.hideLoadingMsg();
+                Dashboard.alert('Failed to save Seerr Integration configuration.');
+            });
+
+            return false;
+        };
+        </script>
+    </div>
+</body>
+</html>

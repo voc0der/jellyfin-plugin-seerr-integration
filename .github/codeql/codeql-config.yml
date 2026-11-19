@@ -1,0 +1,7 @@
+name: "Seerr Integration CodeQL config"
+
+# No paths-ignore here: it only applies to code analyzed without a build, and the C# job
+# builds (build-mode: manual), so it never kept CodeQL out of obj/. Build intermediates
+# are filtered out of the SARIF in .github/workflows/codeql.yml instead.
+queries:
+  - uses: security-and-quality
